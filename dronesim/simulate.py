@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 import time as Time
 import struct
-
+import mysocket
 #from geopy.geocoders import Nominatim
 #geolocator = Nominatim()
 #location = geolocator.geocode("4500 Forbes Blvd Lanham MD")
@@ -186,7 +186,7 @@ def torques(inputs, L, b, k):
     
     tau = np.zeros((3,1))
     for i in range(0,8):  
-        tau = tau + np.cross(r_M[:,i], e_M[:,i]*T_M[i][0]).reshape(3,1) + (((-1)**i)*e_M[:,i]*b*inputs[i][0]).reshape(3,1)
+        tau = tau + np.cross(r_M[:,i], e_M[:,i]*T_M[i][0]).reshape(3,1) + (((-1)**(i+1))*e_M[:,i]*b*inputs[i][0]).reshape(3,1)
         
     return tau
 
@@ -197,7 +197,11 @@ def double_to_hex(f):
     return hex(struct.unpack('<Q', struct.pack('<d', f))[0])
 
 def angdif(v1,v2):
-    angle = arccos(dot(v1,v2)/(norm(v1)*norm(v2)))
+    if norm(v1) < 1e-6 or norm(v2) < 1e-6:
+        angle = np.float64(np.nan)
+    else:
+        angle = arccos(dot(v1,v2)/(norm(v1)*norm(v2)))
+
     return angle
     
 # time
@@ -271,11 +275,15 @@ f2hex = np.vectorize(float_to_hex,otypes=[object])
 d2hex = np.vectorize(double_to_hex,otypes=[object])
 i2hex = np.vectorize(hex,otypes=[object])
 #bytetable = np.empty([54,len(t)],dtype=object)
-bytepackets = bytearray()
+
 startpacket = '7E7E7E'.decode('hex')
 endpacket = '7F7F7F'.decode('hex')
+
+socket = mysocket.mysocket()
+socket.connect(socket.gethostname(),10007)
+
 for i in range(len(t)):
-    
+    bytepackets = bytearray()
     bytepackets.extend(startpacket)
     tlocal = Time.localtime()
     date[0][i] = tlocal.tm_year*10000 + tlocal.tm_mon*100+tlocal.tm_mday
@@ -306,7 +314,7 @@ for i in range(len(t)):
         x[2][0] = 0.0
         xd = np.zeros((3,1))
         thetad = np.zeros((3,1))
-        w = np.zeros((3,1))
+#        w = np.zeros((3,1))
         
     pos[:,i] = x.ravel()
     vel[:,i] = xd.ravel()
@@ -332,13 +340,33 @@ for i in range(len(t)):
     
     vsi = xd[2][0]
     vsi_gps = xd[2][0]
-    cog = angdif(np.array([1.0,0.0]),lla_dif[0:2])*180/pi
+    cog = angdif(np.array([1.0,0.0]),lla_dif[0:2])*180.0/pi
     velocity_n_gps = xd[0][0]*1e2
     velocity_e_gps = xd[1][0]*1e2
     velocity_d_gps  = -xd[2][0]*1e2   
     velocity_n = xd[0][0]*1e2
     velocity_e = xd[1][0]*1e2
     velocity_d  = -xd[2][0]*1e2   
+    
+    # motor inputs
+    rc_a = inputs[0][0].astype(np.uint16)
+    rc_e = inputs[1][0].astype(np.uint16)
+    rc_r = inputs[2][0].astype(np.uint16)
+    rc_t = inputs[3][0].astype(np.uint16)
+    rc_u = inputs[4][0].astype(np.uint16)
+    rc_ioc = inputs[5][0].astype(np.uint16)
+    rc_home = inputs[6][0].astype(np.uint16)
+    rc_d4 = inputs[7][0].astype(np.uint16)
+    
+    # motor outputs
+    motor_1 = inputs[0][0].astype(uint32)
+    motor_2 = inputs[1][0].astype(uint32)
+    motor_3 = inputs[2][0].astype(uint32)
+    motor_4 = inputs[3][0].astype(uint32)
+    motor_5 = inputs[4][0].astype(uint32)
+    motor_6 = inputs[5][0].astype(uint32)
+    motor_7 = inputs[6][0].astype(uint32)
+    motor_8 = inputs[7][0].astype(uint32)
     
     if sample >= 1.0:
         # Placeholder values
@@ -436,8 +464,40 @@ for i in range(len(t)):
     bytepackets.extend(can_volt[0][i].astype(np.uint16).tobytes())
     bytepackets.extend('25'.decode('hex'))
     bytepackets.extend(bec_volt[0][i].astype(np.uint16).tobytes())
-    
+    bytepackets.extend('26'.decode('hex'))
+    bytepackets.extend(rc_a.tobytes())
+    bytepackets.extend('27'.decode('hex'))
+    bytepackets.extend(rc_e.tobytes())
+    bytepackets.extend('28'.decode('hex'))
+    bytepackets.extend(rc_r.tobytes())
+    bytepackets.extend('29'.decode('hex'))
+    bytepackets.extend(rc_t.tobytes())
+    bytepackets.extend('2A'.decode('hex'))
+    bytepackets.extend(rc_u.tobytes())
+    bytepackets.extend('2B'.decode('hex'))
+    bytepackets.extend(rc_ioc.tobytes())
+    bytepackets.extend('2C'.decode('hex'))
+    bytepackets.extend(rc_home.tobytes())
+    bytepackets.extend('2D'.decode('hex'))
+    bytepackets.extend(rc_d4.tobytes())
+    bytepackets.extend('2E'.decode('hex'))
+    bytepackets.extend(motor_1.tobytes())
+    bytepackets.extend('2F'.decode('hex'))
+    bytepackets.extend(motor_2.tobytes())
+    bytepackets.extend('30'.decode('hex'))
+    bytepackets.extend(motor_3.tobytes())
+    bytepackets.extend('31'.decode('hex'))
+    bytepackets.extend(motor_4.tobytes())
+    bytepackets.extend('32'.decode('hex'))
+    bytepackets.extend(motor_5.tobytes())
+    bytepackets.extend('33'.decode('hex'))
+    bytepackets.extend(motor_6.tobytes())
+    bytepackets.extend('34'.decode('hex'))
+    bytepackets.extend(motor_7.tobytes())
+    bytepackets.extend('35'.decode('hex'))
+    bytepackets.extend(motor_8.tobytes())
     bytepackets.extend(endpacket)
+    socket.mysend(bytepackets)
     
 plt.close()    
 plt.figure(1)
